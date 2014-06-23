@@ -41,6 +41,7 @@ parser.add_argument('-s', '--serial', dest='device_serial', help='Device serial 
 parser.add_argument('-d', '--device', dest='use_device', action='store_true', help='Use first device for log input (adb -d option).')
 parser.add_argument('-e', '--emulator', dest='use_emulator', action='store_true', help='Use first emulator for log input (adb -e option).')
 parser.add_argument('-c', '--clear', dest='clear_logcat', action='store_true', help='Clear the entire log before running.')
+parser.add_argument('-t', '--time', dest='time_logcat', action='store_true', help='Use time format for logcat (logcat -v time)')
 
 args = parser.parse_args()
 min_level = LOG_LEVELS_MAP[args.min_level]
@@ -145,6 +146,7 @@ PID_KILL  = re.compile(r'^Killing (\d+):([a-zA-Z0-9._:]+)/[^:]+: (.*)$')
 PID_LEAVE = re.compile(r'^No longer want ([a-zA-Z0-9._:]+) \(pid (\d+)\): .*$')
 PID_DEATH = re.compile(r'^Process ([a-zA-Z0-9._:]+) \(pid (\d+)\) has died.?$')
 LOG_LINE  = re.compile(r'^([A-Z])/(.+?)\( *(\d+)\): (.*?)$')
+LOG_TIME_LINE  = re.compile(r'^(.+?) ([A-Z])/(.+?)\( *(\d+)\): (.*?)$')
 BUG_LINE  = re.compile(r'.*nativeGetEnabledTags.*')
 BACKTRACE_LINE = re.compile(r'^#(.*?)pc\s(.*?)$')
 
@@ -156,6 +158,9 @@ if args.use_device:
 if args.use_emulator:
   adb_command.append('-e')
 adb_command.append('logcat')
+if args.time_logcat:
+  adb_command.append('-v')
+  adb_command.append('time')
 
 # Clear log before starting logcat
 if args.clear_logcat:
@@ -213,12 +218,19 @@ while adb.poll() is None:
   bug_line = BUG_LINE.match(line)
   if bug_line is not None:
     continue
+  
+  if args.time_logcat:
+     log_line = LOG_TIME_LINE.match(line)
+  else:
+     log_line = LOG_LINE.match(line)
 
-  log_line = LOG_LINE.match(line)
   if log_line is None:
     continue
 
-  level, tag, owner, message = log_line.groups()
+  if args.time_logcat:
+     time, level, tag, owner, message = log_line.groups()
+  else:
+     level, tag, owner, message = log_line.groups()
 
   start = PID_START.match(message)
   if start is not None:
@@ -286,4 +298,8 @@ while adb.poll() is None:
     message = matcher.sub(replace, message)
 
   linebuf += indent_wrap(message)
-  print(linebuf.encode('utf-8'))
+  if args.time_logcat:
+    print(time.encode('utf-8') + ' ' + linebuf.encode('utf-8'))
+  else:
+    print(linebuf.encode('utf-8'))
+
